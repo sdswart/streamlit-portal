@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<style>h3, p { display:inline }</style>
+<div class="text-center">
+  <h3>{{ name }}</h3>
+  <p class="pr-2 float-right"><a href="{{ url_for('home') }}"><i class="fas fa-home"></i> Return home</a></p>
+</div>
+<p id="waitmsg">Loading application...</p>
+<iframe id="appframe" frameborder='0' noresize='noresize' style='position: absolute; background: transparent; width: 100%; height:100%;' src='' frameborder='0'></iframe>
+{% endblock %}
+
+{% block domready %}
+  var timerForLoadingResult=  setInterval(checkServer,1000);
+  function checkServer() {
+           $.ajax("{{url_for('url_exists')}}",
+             {
+               data : JSON.stringify({url:"{{ server_url }}"}),
+               contentType : 'application/json',
+               type : 'POST',
+               success: function (data) {
+                 console.log(data);
+                  if (data=="ok") {
+                     $("#waitmsg").remove();
+                     $("#appframe").attr("src", "{{ server_url }}");
+                     clearInterval(timerForLoadingResult);
+                  }
+               }
+             })
+        }
+
+{% endblock %}
