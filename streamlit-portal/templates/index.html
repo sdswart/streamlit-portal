@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <style>
+    .card-columns {
+      @include media-breakpoint-only(lg) {
+        column-count: 4;
+      }
+      @include media-breakpoint-only(xl) {
+        column-count: 5;
+      }
+    }
+  </style>
+  <div class="m-3 pr-3">
+    <h1> Applications </h1>
+
+    <div id="messages">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible" role="alert">
+              <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+              {{ message }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <form id="upload_form" action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data">
+      <input  id="fileinput" class="d-none" name="file" type="file">
+      <button  id="fileupload" class="btn btn-info" type="button"><i class="fas fa-upload"></i> Upload New File</button>
+      <p id="uploadinfo" style="display: none;">Uploading... </p>
+    </form>
+    <div class="card-columns">
+      {% for name,props in apps.items() %}
+        <div class="card border p-1 m-3">
+          <div class="position-absolute" style="right:5px;">
+            <button data-name="{{ name }}" data-url="{{ props['delete_url'] }}" type="button" class="delete_app btn btn-sm btn-danger"><i class="fas fa-trash-alt"></i></button>
+          </div>
+
+          {% if props['img_url']=="#" %}
+            <p class="m-2">No image available.</p>
+            <button data-url="{{ props['create_img_url'] }}" type="button" class="create_img btn btn-sm btn-info">Create Image</button>
+          {% else %}
+            <div class="position-absolute" style="left:5px;">
+              <button data-url="{{ props['create_img_url'] }}" type="button" class="create_img btn btn-sm btn-info"><i class="fas fa-sync"></i></button>
+            </div>
+            <img class="card-img-top" src="{{ props['img_url'] }}" alt="{{ name }}">
+          {% endif %}
+          <p class="creating_img" style="display: none;">Creating a new image... Please wait...</p>
+          <div class="card-body text-center">
+            <h5 class="card-title">{{ name }}</h5>
+            <p class="card-text">
+              {% if props['running'] %}
+                <i class="fas fa-running" style="color:green"></i> Running
+              {% else %}
+                <i class="fas fa-pause-circle" style="color:black"></i> In-active
+              {% endif %}
+            </p>
+            <a href="{{ props['url'] }}" class="btn btn-primary">Open</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <button id="show-delete" type="button" class="d-none" data-toggle="modal" data-target="#delete-modal"></button>
+  <div class="modal hide fade" id="delete-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Are you sure</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p>Do you want to delete <span id="delete_app_name"></span>?</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <a id="confirm-delete" href="" type="button" class="btn btn-danger">Delete</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block domready %}
+
+  function upload_file() {
+      $("#uploadinfo").show();
+      jQuery.ajax({
+          type: 'POST',
+          url:"{{ url_for('upload') }}",
+          data: new FormData($("#upload_form")[0]),
+          processData: false,
+          contentType: false,
+          success: function(data) {
+            $("#uploadinfo").hide();
+            if (data=="ok") {
+              location.reload();
+            } else {
+              $("#messages").append("<div class='alert alert-danger alert-dismissible' role='alert'>"+
+                                  "<button type='button' class='close' data-dismiss='alert' aria-label='Close'>"+
+                                  "<span aria-hidden='true'>&times;</span></button>"+data+"</div>");
+            }
+           }
+      });
+  }
+  $('#fileupload').click(function() {
+    $('#fileinput').trigger('click');
+  });
+
+  $('#fileinput').change(function() {
+    upload_file();
+  });
+  $(".delete_app").click(function() {
+    name=$(this).data("name");
+    url=$(this).data("url");
+    $("#delete_app_name").html(name);
+    $("#confirm-delete").attr("href",url);
+    $("#show-delete").click();
+  });
+  $(".create_img").click(function() {
+    url=$(this).data("url");
+    var this_create_img = $(this);
+    var creating_p = $(this).closest(".card").find(".creating_img");
+    this_create_img.hide();
+    creating_p.show();
+    $.ajax(url,
+      {type : 'POST',
+      success: function (data) {
+        creating_p.hide();
+        this_create_img.show();
+        console.log(data);
+         if (data=="ok") {
+            location.reload();
+         } else {
+           $("#messages").append("<div class='alert alert-danger alert-dismissible' role='alert'>"+
+                               "<button type='button' class='close' data-dismiss='alert' aria-label='Close'>"+
+                               "<span aria-hidden='true'>&times;</span></button>"+data+"</div>");
+         }
+      },
+      error: function() {
+        creating_p.hide();
+        this_create_img.show();
+        $("#messages").append("<div class='alert alert-danger alert-dismissible' role='alert'>"+
+                            "<button type='button' class='close' data-dismiss='alert' aria-label='Close'>"+
+                            "<span aria-hidden='true'>&times;</span></button>Create new image call failed. Please try again.</div>");
+      }
+    });
+
+  });
+{% endblock %}

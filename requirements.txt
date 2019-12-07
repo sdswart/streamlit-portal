@@ -1,6 +1,4 @@
 Flask
-numpy
-pandas
 selenium
 psutil
 streamlit

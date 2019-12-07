@@ -1,0 +1,35 @@
+version: "3"
+services:
+  web:
+    image: sdswart/streamlit_portal:latest
+    env_file:
+      - env.env
+    command: bash -c "gunicorn --bind 0.0.0.0:8000 wsgi"
+    ports:
+      - "5858:5858"
+    volumes:
+      - spstatic:/www/static
+      - spinstance:/www/instance
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    networks:
+      default:
+        aliases:
+          - web
+  nginx:
+    image:  sdswart/spnginx:latest
+    volumes:
+      - spstatic:/static
+    depends_on:
+      - web
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "1337:80"
+volumes:
+  spstatic:
+  spinstance:
