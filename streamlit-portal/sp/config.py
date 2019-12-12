@@ -12,4 +12,5 @@ class Config(object):
     STATIC_URL=os.environ.get('SP_STATIC_URL',"/static")
     TEMPLATES_PATH=os.path.join(basedir,os.environ.get('SP_TEMPLATES_PATH',"templates"))
 
-    PORTS=list(range(5000,9000))
+    PORTS=list(range(8101,8200))
+    NGINX_ST_PORT=1338

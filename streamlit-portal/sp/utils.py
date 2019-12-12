@@ -8,24 +8,23 @@ import os
 import requests
 import urllib.parse
 from selenium import webdriver
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.options import Options
-from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 
 from .config import Config
 
 def run_in_terminal(command,new_env=None,return_output=False):
-    assert isinstance(command,list), "Commands must be passed as lists"
     env = os.environ.copy()
     if new_env is not None:
         env = {**env,**new_env}
     print(command)
-    proc=subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,env=env,creationflags=subprocess.CREATE_NEW_CONSOLE)
+    proc=subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,env=env)
     if return_output:
         msg,err=proc.communicate()
         return "MSG: "+str(msg)+"ERR: "+str(err)
+        #print("MSG: "+str(msg)+"ERR: "+str(err))
     return proc
 
 def proc_running(proc):
@@ -36,23 +35,24 @@ def proc_running(proc):
 
 def kill_pid(pid):
     print("killing %d..."%pid)
-    res = run_in_terminal(["taskkill", "/F", "/T", "/PID", str(pid)],return_output=True)
+    res = run_in_terminal("taskkill /F /T /PID %s"%str(pid),return_output=True)
     print(res)
 
-def get_screenshot(instance_path,file_name):
+def get_screenshot(instance_path,file_name,host):
     path=os.path.join(instance_path, '%s.py'%file_name)
-    proc,final_port=streamlit_service(path)
-    server_url = "http://"+get_ip()+":"+str(final_port)
+    proc,final_port=streamlit_service(path,host)
+    server_url = "http://%s:%d"%(host,final_port)
     pic_path=os.path.join(instance_path, 'img', '%s.png'%file_name)
 
-    options = Options()
-    options.headless = True
-
-    #binary = None if Config.FIREFOX_BINARY is None else FirefoxBinary(Config.FIREFOX_BINARY)
-    with webdriver.Firefox(options=options) as browser: #,firefox_binary=binary
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--window-size=1420,1080')
+    chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--disable-gpu')
+    with webdriver.Remote(command_executor="http://%s:4444/wd/hub"%host, desired_capabilities=DesiredCapabilities.CHROME, options=chrome_options) as browser:
         browser.get(server_url)
         try:
-            element = WebDriverWait(browser, 20).until(
+            element = WebDriverWait(browser, 30).until(
                 EC.title_contains(file_name)
             )
         except:
@@ -60,16 +60,15 @@ def get_screenshot(instance_path,file_name):
 
         finally:
             browser.get_screenshot_as_file(pic_path)
-            browser.quit()
     kill_pid(proc.pid)
     return pic_path
 
-def streamlit_service(path,file_name=None,modified=None,running_streamlits=None):
+def streamlit_service(path,host_ip,file_name=None,modified=None,running_streamlits=None):
     final_port=None
 
-    if running_streamlits is not None or file_name is not None:
+    if running_streamlits is not None and file_name is not None:
         #Check if process exists in running_streamlits
-        if file_name in running_streamlits: #process may have stopped or file modified
+        if file_name in running_streamlits and "proc" in running_streamlits[file_name]: #process may have stopped or file modified
             if proc_running(running_streamlits[file_name]["proc"]):
                 curproc=running_streamlits[file_name]["proc"]
                 kill_pid(curproc.pid)
@@ -81,7 +80,7 @@ def streamlit_service(path,file_name=None,modified=None,running_streamlits=None)
         running_streamlits={}
 
     #Look for available ports
-    streamlit_ports=[props["port"] for _,props in running_streamlits.items()]
+    streamlit_ports=[props["port"] for _,props in running_streamlits.items() if "port" in props]
     for port in list(set(Config.PORTS)-set(streamlit_ports)):
         if not port_in_use(port):
             final_port=port
@@ -90,7 +89,8 @@ def streamlit_service(path,file_name=None,modified=None,running_streamlits=None)
     if final_port is None: #No ports are available
         return None,None
 
-    command=['streamlit', 'run', path, '--server.port', str(final_port), '--server.headless', '1']
+    #command='streamlit run "%s" --server.port %s --server.headless 1 --server.baseUrlPath %s'%(path,str(final_port),Config.BASE_PATH+"/"+file_name+"/")
+    command='streamlit run "%s" --server.port %s --server.headless 1  --server.enableCORS false --browser.serverAddress %s'%(path,str(final_port),host_ip)
     my_env = {}
     if modified is not None:
         my_env["MODIFIED"] = modified
@@ -103,15 +103,13 @@ def streamlit_service(path,file_name=None,modified=None,running_streamlits=None)
 def clean_streamlit_processes(running_streamlits):
     #Make sure running_streamlits doesn't include processes that have stopped
     for name in list(running_streamlits):
-        if not proc_running(running_streamlits[name]["proc"]):
-            running_streamlits.pop(name, None)
-
-    #Close all streamlits older than 5 days
-    for name in list(running_streamlits):
-        if running_streamlits[name]["last_accessed"] < (datetime.now()-timedelta(days=5)):
-            curproc=running_streamlits[name]["proc"]
-            kill_pid(curproc.pid)
-            running_streamlits.pop(name, None)
+        if "proc" in running_streamlits[name]:
+            if not proc_running(running_streamlits[name]["proc"]):
+                running_streamlits.pop(name, None)
+            elif running_streamlits[name]["last_accessed"] < (datetime.now()-timedelta(days=5)):
+                curproc=running_streamlits[name]["proc"]
+                kill_pid(curproc.pid)
+                running_streamlits.pop(name, None)
 
     #Check if there are any streamlits running in background that are not in running_streamlits
     for key,val in find_running_streamlits().items():

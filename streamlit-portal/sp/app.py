@@ -10,13 +10,13 @@ import requests
 from datetime import datetime
 import os
 
-from scripts.utils import *
-from scripts.config import Config
+from .utils import *
+from .config import Config
 
 base_path=Config.BASE_PATH
 app = Flask(__name__,template_folder=Config.TEMPLATES_PATH,static_url_path=base_path+Config.STATIC_URL,instance_path=Config.INSTANCE_PATH)
-app.config.from_object(Config)
 app.running_streamlits={}
+app.secret_key=Config.SECRET_KEY
 
 @app.route(base_path+'/file/upload',methods=['POST'])
 def upload():
@@ -60,7 +60,8 @@ def create_img(name):
     if os.path.isfile(path):
         try:
             #clean_streamlit_processes(app.running_streamlits)
-            img_path=get_screenshot(app.instance_path,name)
+            # host=request.headers.get('Host',request.host)
+            img_path=get_screenshot(app.instance_path,name,request.host.split(":")[0])
             flash('Image for application "%s" created successfully'%name,'success')
             return "ok"
         except Exception as e:
@@ -68,40 +69,55 @@ def create_img(name):
     return 'App "%s" not found'%name
     #return '<h1>Image saved!</h1><p><a href="%s">Return home</a></p><img src="%s" alt="%s" height="500">'%(url_for('home'),url_for('serve_img',name=name),name)
 
-@app.route(base_path+'/url_exists',methods=['POST'])
-def url_exists():
+@app.route(base_path+'/port_exists',methods=['POST'])
+def port_exists():
     jsondata=request.json
-    if jsondata is not None and 'url' in jsondata:
-        url=jsondata['url']
-        res = requests.get(url)
-        if res.status_code == 200:
-            return "ok"
-    return "ko"
+    if jsondata is not None and 'port' in jsondata:
+        port=jsondata['port']
+        url="http://%s:%d/"%(request.host.split(":")[0],port)
+        try:
+            res = requests.get(url)
+            if res.status_code == 200:
+                return "ok"
+        except:
+            pass
+    return "ko url = "+url
 
-@app.route(base_path+'/<name>')
+@app.route(base_path+'/<name>/')
 def streamlit_show(name=None):
     if name is None:
         return 'Please navigate to the name of the streamlit'
+    #if path is None and name in app.running_streamlits and "port" in app.running_streamlits[name]:
+    #    return get_proxy(app.running_streamlits[name]["port"])
+
     path=os.path.join(app.instance_path, '%s.py'%name)
     if not os.path.isfile(path):
         return "Streamlit file %s.py doesn't exist"%name
 
     modified_date=str(os.path.getmtime(path))
 
-    if name in app.running_streamlits and proc_running(app.running_streamlits[name]["proc"]) and modified_date==app.running_streamlits[name]["modified"]:
+    if name not in app.running_streamlits:
+        app.running_streamlits[name]={}
+
+    if "proc" in app.running_streamlits[name] and proc_running(app.running_streamlits[name]["proc"]) and modified_date==app.running_streamlits[name]["modified"]:
         app.running_streamlits[name]["last_accessed"]=datetime.now()
         port=app.running_streamlits[name]["port"]
     else:
-        proc,port=streamlit_service(path,name,modified_date,app.running_streamlits) #passing name and modified_date to attach to process
+        app.running_streamlits[name]={}
+        print("STARTING NEW streamlit_service !!!!!!!!!!!!!")
+        proc,port=streamlit_service(path,request.host.split(":")[0],name,modified_date,app.running_streamlits) #passing name and modified_date to attach to process
         if proc is None:
+            app.running_streamlits.pop(name,None)
             return "No ports are available."
-        app.running_streamlits[name]={"last_accessed":datetime.now(),
-                                    "proc":proc,
-                                    "port":port,
-                                    "modified":modified_date}
+        else:
+            app.running_streamlits[name]["last_accessed"]=datetime.now()
+            app.running_streamlits[name]["proc"]=proc
+            app.running_streamlits[name]["port"]=port
+            app.running_streamlits[name]["modified"]=modified_date
 
-    server_url = "http://"+get_ip()+":"+str(port)
-    return render_template('app_view.html',server_url=server_url,name=name)
+    #return get_proxy(port)
+    server_url = "http://%s:%d/%d/"%(request.host.split(":")[0],Config.NGINX_ST_PORT,port)
+    return render_template('app_view.html',server_url=server_url,name=name,streamlit_port=port)
 
 @app.route(base_path+'/')
 def home():
@@ -120,6 +136,3 @@ def home():
                             "running": name in list(app.running_streamlits),
                             "url": url_for('streamlit_show',name=name)}
     return render_template('index.html',apps=streamlits)
-
-if __name__ == "__main__":
-    app.run(host=Config.HOST,port=Config.PORT,debug=Config.DEBUG)

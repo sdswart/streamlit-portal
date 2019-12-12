@@ -8,5 +8,3 @@ COPY requirements.txt /www/
 RUN pip install -r requirements.txt
 RUN pip install gunicorn
 COPY . /www/
-
-ENV PATH="/www/geckodriver/linux/:${PATH}"

@@ -1,0 +1,14 @@
+#Create images:
+
+docker build -t sdswart/sp_nginx:latest .
+docker build -t sdswart/streamlit_portal:latest .
+
+docker push sdswart/sp_nginx:latest
+docker push sdswart/streamlit_portal:latest
+
+Deploy images:
+
+docker pull sdswart/sp_nginx:latest
+docker pull sdswart/streamlit_portal:latest
+
+docker stack deploy -c docker-compose.yml spportal

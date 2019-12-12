@@ -2,3 +2,5 @@ Flask
 selenium
 psutil
 streamlit
+numpy
+pandas
